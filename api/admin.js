@@ -18,8 +18,18 @@ module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
  
-  if (!passwordOk(req)) {
-    return res.status(401).json({ error: "Contraseña incorrecta." });
+    if (!passwordOk(req)) {
+    const given = String(req.headers["x-admin-password"] || "").trim();
+    return res.status(401).json({
+      error: "Contraseña incorrecta.",
+      // TEMPORAL: borrar después del diagnóstico
+      debug: {
+        hashRecibido: crypto.createHash("sha256").update(given).digest("hex").slice(0, 8),
+        hashEsperado: ADMIN_PASSWORD_HASH.slice(0, 8),
+        largoHashEsperado: ADMIN_PASSWORD_HASH.length,
+        largoRecibido: given.length,
+      },
+    });
   }
   if (!enabled) {
     return res.status(503).json({
