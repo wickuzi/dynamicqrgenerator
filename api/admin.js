@@ -4,22 +4,20 @@
 //   POST -> { action: "delete", slug }    elimina
 const crypto = require("crypto");
 const { enabled, setLink, deleteLink, listLinks } = require("./_store");
+const ADMIN_PASSWORD_HASH = "95d5b5f1fcc444aa6c851e142377da7d67328e5a4c0c5410ae3d5ded007fd400";
 
 function passwordOk(req) {
-  const expected = (process.env.ADMIN_PASSWORD || "").trim();
   const given = String(req.headers["x-admin-password"] || "").trim();
-  if (!expected) return false;
-  const a = crypto.createHash("sha256").update(given).digest();
-  const b = crypto.createHash("sha256").update(expected).digest();
-  return crypto.timingSafeEqual(a, b);
+  const givenHash = crypto.createHash("sha256").update(given).digest("hex");
+  const a = Buffer.from(givenHash);
+  const b = Buffer.from(ADMIN_PASSWORD_HASH.toLowerCase());
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
-  if (!process.env.ADMIN_PASSWORD) {
-    return res.status(500).json({ error: "Falta la variable ADMIN_PASSWORD en Vercel." });
-  }
+ 
   if (!passwordOk(req)) {
     return res.status(401).json({ error: "Contraseña incorrecta." });
   }
