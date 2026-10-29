@@ -6,8 +6,8 @@ const crypto = require("crypto");
 const { enabled, setLink, deleteLink, listLinks } = require("./_store");
 
 function passwordOk(req) {
-  const expected = process.env.ADMIN_PASSWORD || "";
-  const given = String(req.headers["x-admin-password"] || "");
+  const expected = (process.env.ADMIN_PASSWORD || "").trim();
+  const given = String(req.headers["x-admin-password"] || "").trim();
   if (!expected) return false;
   const a = crypto.createHash("sha256").update(given).digest();
   const b = crypto.createHash("sha256").update(expected).digest();
