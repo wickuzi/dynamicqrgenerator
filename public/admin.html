@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Panel de QR dinámicos</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f5f7; color: #1d1d1f; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+    h1 { font-size: 1.5rem; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; margin-bottom: 10px; }
+    button { padding: 9px 14px; border: 0; border-radius: 8px; background: #0071e3; color: #fff; font-size: .95rem; cursor: pointer; }
+    button.sec { background: #e8e8ed; color: #1d1d1f; }
+    button.del { background: #d93025; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 6px; border-bottom: 1px solid #eee; vertical-align: top; word-break: break-all; }
+    td.actions { white-space: nowrap; }
+    td.actions button { margin: 2px 2px 2px 0; }
+    #msg { min-height: 1.4em; font-size: .95rem; }
+    .err { color: #d93025; } .ok { color: #188038; }
+    #qrbox { display: none; text-align: center; }
+    #qr { display: inline-block; background: #fff; padding: 12px; }
+    code { background: #eee; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Panel de QR dinámicos</h1>
+
+  <!-- LOGIN -->
+  <div class="card" id="login">
+    <input type="password" id="pwd" placeholder="Contraseña de administrador" />
+    <button id="btnLogin">Entrar</button>
+    <p id="loginMsg" class="err"></p>
+  </div>
+
+  <!-- APP -->
+  <div id="app" hidden>
+    <div class="card">
+      <h3>Crear o actualizar enlace</h3>
+      <input id="slug" placeholder="Nombre corto (ej. resenas)" />
+      <input id="url" placeholder="URL de destino (https://...)" />
+      <button id="btnSave">Guardar</button>
+      <button class="sec" id="btnClear">Limpiar</button>
+      <p id="msg"></p>
+    </div>
+
+    <div class="card">
+      <h3>Mis enlaces</h3>
+      <table>
+        <thead><tr><th>QR fijo</th><th>Destino actual</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" hidden>Aún no tienes enlaces.</p>
+    </div>
+
+    <div class="card" id="qrbox">
+      <h3>Código QR</h3>
+      <div id="qr"></div>
+      <p><code id="qrurl"></code></p>
+      <button id="btnDownload">Descargar PNG</button>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  let pwd = sessionStorage.getItem("pwd") || "";
+  let links = {};
+
+  async function api(method, body) {
+    const res = await fetch("/api/admin", {
+      method,
+      headers: { "Content-Type": "application/json", "x-admin-password": pwd },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  function say(text, ok) {
+    const m = $("#msg");
+    m.textContent = text;
+    m.className = ok ? "ok" : "err";
+  }
+
+  async function load() {
+    const data = await api("GET");
+    links = data.links || {};
+    render();
+  }
+
+  function render() {
+    const rows = $("#rows");
+    rows.innerHTML = "";
+    const slugs = Object.keys(links).sort();
+    $("#empty").hidden = slugs.length > 0;
+
+    slugs.forEach((slug) => {
+      const tr = document.createElement("tr");
+
+      const tdA = document.createElement("td");
+      const a = document.createElement("a");
+      a.href = `/r/${slug}`;
+      a.target = "_blank";
+      a.textContent = `/r/${slug}`;
+      tdA.appendChild(a);
+
+      const tdU = document.createElement("td");
+      tdU.textContent = links[slug];
+
+      const tdB = document.createElement("td");
+      tdB.className = "actions";
+      [
+        ["QR", "", () => showQR(slug)],
+        ["Editar", "sec", () => { $("#slug").value = slug; $("#url").value = links[slug]; window.scrollTo(0, 0); }],
+        ["Eliminar", "del", () => removeLink(slug)],
+      ].forEach(([label, cls, fn]) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        if (cls) b.className = cls;
+        b.onclick = fn;
+        tdB.appendChild(b);
+      });
+
+      tr.append(tdA, tdU, tdB);
+      rows.appendChild(tr);
+    });
+  }
+
+  async function saveLink() {
+    const slug = $("#slug").value.trim().toLowerCase();
+    const url = $("#url").value.trim();
+    try {
+      await api("POST", { slug, url });
+      say("Guardado. El QR ya apunta al nuevo destino.", true);
+      await load();
+      showQR(slug);
+    } catch (e) { say(e.message, false); }
+  }
+
+  async function removeLink(slug) {
+    if (!confirm(`¿Eliminar /r/${slug}? Los QR impresos dejarán de apuntar a este destino.`)) return;
+    try {
+      await api("POST", { action: "delete", slug });
+      $("#qrbox").style.display = "none";
+      await load();
+    } catch (e) { say(e.message, false); }
+  }
+
+  function showQR(slug) {
+    const full = `${location.origin}/r/${slug}`;
+    $("#qr").innerHTML = "";
+    new QRCode($("#qr"), { text: full, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
+    $("#qrurl").textContent = full;
+    $("#qrbox").style.display = "block";
+    $("#qrbox").dataset.slug = slug;
+    $("#qrbox").scrollIntoView({ behavior: "smooth" });
+  }
+
+  function downloadQR() {
+    const src = $("#qr canvas");
+    if (!src) return;
+    // Agrega margen blanco (zona de silencio) para que escanee bien
+    const margin = 32;
+    const c = document.createElement("canvas");
+    c.width = src.width + margin * 2;
+    c.height = src.height + margin * 2;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(src, margin, margin);
+    const a = document.createElement("a");
+    a.href = c.toDataURL("image/png");
+    a.download = `qr-${$("#qrbox").dataset.slug}.png`;
+    a.click();
+  }
+
+  async function login() {
+    pwd = $("#pwd").value || pwd;
+    try {
+      await load();
+      sessionStorage.setItem("pwd", pwd);
+      $("#login").hidden = true;
+      $("#app").hidden = false;
+    } catch (e) {
+      sessionStorage.removeItem("pwd");
+      $("#loginMsg").textContent = e.message;
+    }
+  }
+
+  $("#btnLogin").onclick = login;
+  $("#pwd").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+  $("#btnSave").onclick = saveLink;
+  $("#btnClear").onclick = () => { $("#slug").value = ""; $("#url").value = ""; say("", true); };
+  $("#btnDownload").onclick = downloadQR;
+
+  if (pwd) login(); // reingreso automático durante la sesión
+</script>
+</body>
+</html>
