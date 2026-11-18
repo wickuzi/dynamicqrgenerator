@@ -36,8 +36,66 @@ module.exports = async function handler(req, res) {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 
+  // Destinos de Google (reseñas, Maps): en iPhone, una redirección 302 deja el
+  // enlace dentro de Safari, donde Google pide iniciar sesión. Si la persona
+  // TOCA un enlace, iOS sí lo abre en la app de Google / Google Maps con su
+  // sesión. Por eso para Google mostramos una página con un botón.
+  if (isGoogle(target)) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.statusCode = 200;
+    res.end(googlePage(target));
+    return;
+  }
+
   // 302 = redirección temporal
   res.setHeader("Location", target);
   res.statusCode = 302;
   res.end();
 };
+
+function isGoogle(url) {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return (
+      h === "google.com" || h.endsWith(".google.com") ||
+      h === "g.page" || h.endsWith(".g.page") ||
+      h === "goo.gl" || h.endsWith(".goo.gl")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function googlePage(url) {
+  const u = esc(url);
+  const review = /writereview|\/review/i.test(url);
+  const label = review ? "Dejar reseña en Google" : "Abrir en Google";
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${label}</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,sans-serif;background:#f5f5f7;color:#222;text-align:center;padding:16px;box-sizing:border-box}
+  .card{max-width:360px;width:100%}
+  h1{font-size:1.3rem;margin:0 0 8px}
+  p{color:#555;margin:0 0 24px}
+  a.btn{display:block;padding:18px;border-radius:14px;background:#1a73e8;color:#fff;font-size:1.15rem;font-weight:600;text-decoration:none}
+  a.btn:active{opacity:.85}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>${review ? "¡Gracias por tu visita!" : "Continuar"}</h1>
+    <p>${review ? "Toca el botón para dejarnos tu reseña." : "Toca el botón para continuar."}</p>
+    <a class="btn" href="${u}">${label}</a>
+  </div>
+</body>
+</html>`;
+}
