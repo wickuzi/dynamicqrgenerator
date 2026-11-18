@@ -94,8 +94,19 @@ function googlePage(url) {
   <div class="card">
     <h1>${review ? "¡Gracias por tu visita!" : "Continuar"}</h1>
     <p>${review ? "Toca el botón para dejarnos tu reseña." : "Toca el botón para continuar."}</p>
-    <a class="btn" href="${u}">${label}</a>
+    <a class="btn" id="go" href="${u}">${label}</a>
   </div>
+<script>
+  // En iPhone (iOS 17+) abrimos el enlace en Safari con x-safari-https://.
+  // El "Escáner de códigos" de iOS usa un mini navegador sin la sesión de
+  // Google del usuario; Safari sí la tiene. En otros equipos no cambia nada.
+  (function () {
+    var m = navigator.userAgent.match(/(?:iPhone|iPod|iPad).*? OS ([0-9]+)_/);
+    if (!m || parseInt(m[1], 10) < 17) return;
+    var a = document.getElementById("go");
+    if (a.href.indexOf("https://") === 0) a.href = "x-safari-" + a.href;
+  })();
+</script>
 </body>
 </html>`;
 }
